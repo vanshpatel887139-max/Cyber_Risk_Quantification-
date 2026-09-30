@@ -252,8 +252,26 @@ docs/
   SECURITY_ACCESS_REQUIREMENTS.md  threat model, access control, and security test plan
   FRONTEND_SPECIFICATION.md        UI specification: 11 screens, components, requirements
   AI_LLM_SPECIFICATION.md          AI layer: intents, grounding, prompts, evaluation, safeguards
+  FEATURE_TICKET_LIST.md          285-ticket backlog: epics, phases, cut line, and CSV export
   worked_example.py               regenerates every figure quoted in the design doc
 ```
+
+## Backlog
+
+`docs/FEATURE_TICKET_LIST.md` is the build plan. It holds 285 tickets across 17
+epics, each traced to a requirement ID, each sized between 2 and 8 hours. 152
+are marked **Done** with a `file:line` or test reference as evidence; the rest
+are `To Do`. Every ticket marked Done was verified while the backlog was
+written, so no claim in it is aspirational.
+
+Two things in it are worth reading before planning anything:
+
+- **§8.4, the cut line.** 464 proposed hours remain across 122 open tickets,
+  which is more than a small team has. The cut line is an ordered list of what
+  to drop, plus seven tickets that must never be dropped.
+- **§13, the next 10 tickets.** Nine of the ten have no dependencies, and the
+  first is a four-hour fix to a defect that currently makes the assistant
+  answer what-if questions with the baseline.
 
 ## Limitations
 

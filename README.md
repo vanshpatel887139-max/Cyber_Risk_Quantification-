@@ -248,8 +248,10 @@ app/
 tests/            174 tests across risk, optimise, ingest, ai, reports, db, api
 smoke.py          end-to-end check against a running server
 docs/
-  TECHNICAL_ARCHITECTURE.md   full design, formulas, and known limitations
-  worked_example.py           regenerates every figure quoted in the design doc
+  TECHNICAL_ARCHITECTURE.md       full design, formulas, and known limitations
+  SECURITY_ACCESS_REQUIREMENTS.md  threat model, access control, and security test plan
+  FRONTEND_SPECIFICATION.md        UI specification: 11 screens, components, requirements
+  worked_example.py               regenerates every figure quoted in the design doc
 ```
 
 ## Limitations

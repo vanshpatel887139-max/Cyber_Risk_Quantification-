@@ -1917,7 +1917,7 @@ ROLE_ANALYST (analyst) = {
 ROLE_EXEC    (ciso) = { view, ai.ask, report.export, assessment.run }
 ```
 
-**[V]** `app/config.py:56-70`. The comment above the literal is exact: *"Server-side
+**[V]** `app/config.py:58-70`. The comment above the literal is exact: *"Server-side
 enforcement only."*
 
 Three observations that matter more than the literal contents:
@@ -2477,6 +2477,32 @@ number.
 | **F-25** | Refusal is literal substring matching; compliance, benchmark and attribution questions slip through | **High** | Open |
 | **F-26** | CSV export has no formula-injection defence; a leading `=`/`+`/`-`/`@` is written verbatim | Medium | Open |
 | **F-27** | Failed logins are not written to the audit log, so brute-force is invisible | Medium | Open |
+**F-27 / F-28 — the audit trail has a hole exactly where brute force would show.**
+
+The login handler writes an audit row and then raises, inside the same
+transaction:
+
+```python
+with db.connect() as conn:                    # app/main.py:91
+    ...
+    if user is None or not db.verify_password(...):
+        db.audit(conn, "auth.failed", ...)     # app/main.py:95   <- written
+        raise HTTPException(401, "Invalid username or password")   # app/main.py:97
+```
+
+`db.connect()` commits on clean exit and **rolls back on any exception**
+(`app/db.py:30-35`), so the `HTTPException` discards the row just written.
+**Measured: five consecutive failed logins produce zero audit rows.** This is the
+only audit-then-raise site in the codebase — every other `db.audit` call returns
+normally and commits — so the trail has one hole, and it is the one that would
+have revealed a password attack. The code *reads* as correct, which is why it
+survived review.
+
+Fix [P]: open a second connection for the audit write, so it commits
+independently of the request's outcome. Add a test that asserts the row count
+after N failed logins — this class of bug is invisible to every other test.
+
+| **F-28** | `auth.failed` audit rows are written and then silently rolled back — the code looks correct and never persists | **High** | Open |
 
 F-1 is the one that must be closed before any deployment beyond a single
 operator's laptop, because it undermines the product's core claim. F-3 is
@@ -2829,6 +2855,7 @@ Full register in section N.6.
 | F-25 | Refusal bypassable by rephrasing | High | 0 |
 | F-26 | CSV formula injection on export | Medium | 1 |
 | F-27 | Failed logins not audited | Medium | 0 |
+| F-28 | Audit row rolled back by the exception it precedes | High | 0 |
 
 ## Appendix C — Verification record
 

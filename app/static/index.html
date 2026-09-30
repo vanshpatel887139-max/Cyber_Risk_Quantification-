@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cyber Risk Quantification</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <strong>Cyber Risk Quantification</strong>
+    <span class="sub">expected annual loss &middot; budget optimisation &middot; grounded analyst</span>
+  </div>
+  <div class="session" id="session"></div>
+</header>
+
+<div id="banner" class="banner">
+  <strong>Synthetic demonstration data.</strong> Every figure on this page is generated
+  from an invented dataset for product evaluation. It is not a measurement of any real
+  organisation.
+</div>
+
+<main>
+  <section id="login-panel" class="panel">
+    <h2>Sign in</h2>
+    <div class="row">
+      <input id="username" placeholder="username" value="analyst" autocomplete="username">
+      <input id="password" type="password" placeholder="password" value="analyst123"
+             autocomplete="current-password">
+      <button id="login-btn">Sign in</button>
+    </div>
+    <p class="muted">Prototype accounts: <code>analyst</code> / <code>analyst123</code>,
+      <code>ciso</code> / <code>ciso123</code>, <code>admin</code> / <code>admin123</code>.</p>
+    <p id="login-error" class="error"></p>
+  </section>
+
+  <div id="app" hidden>
+    <nav class="tabs">
+      <button class="tab active" data-tab="exposure">Exposure</button>
+      <button class="tab" data-tab="optimise">Optimise</button>
+      <button class="tab" data-tab="ask">Ask</button>
+      <button class="tab" data-tab="data">Data</button>
+      <button class="tab" data-tab="report">Report</button>
+    </nav>
+
+    <!-- EXPOSURE -->
+    <section class="tabpanel active" id="tab-exposure">
+      <div class="kpis" id="kpis"></div>
+      <div class="kpis" id="exposure-kpis"></div>
+      <h3>Scenarios by expected annual loss</h3>
+      <table id="scenario-table">
+        <thead><tr>
+          <th>#</th><th>Scenario</th><th>Asset</th><th class="num">SLE</th>
+          <th class="num">P(inherent)</th><th class="num">Control effect</th>
+          <th class="num">P(residual)</th><th class="num">EAL</th><th class="num">Share</th>
+          <th>Confidence</th><th></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+      <p class="muted" id="overlap-note"></p>
+
+      <h3>Exposure by asset</h3>
+      <table id="asset-table">
+        <thead><tr><th>Asset</th><th>Business unit</th><th class="num">EAL</th>
+          <th class="num">Share</th></tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <h3>Controls applied to the selected scenarios</h3>
+      <table id="control-table">
+        <thead><tr><th>Scenario</th><th>Control</th><th class="num">Baseline CE</th>
+          <th class="num">Applied CE</th><th>Source</th><th>Frameworks</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <!-- OPTIMISE -->
+    <section class="tabpanel" id="tab-optimise">
+      <div class="row wrap">
+        <label>Budget
+          <input id="budget" type="number" min="100000" step="100000" value="2500000">
+        </label>
+        <label>Max actions
+          <input id="max-actions" type="number" min="1" max="20" value="6">
+        </label>
+        <button id="optimise-btn">Optimise</button>
+        <span class="muted">amounts in rupees</span>
+      </div>
+      <div class="kpis" id="plan-kpis"></div>
+      <div class="two-col">
+        <div>
+          <h3>Selected actions</h3>
+          <table id="plan-table">
+            <thead><tr><th>Action</th><th class="num">Cost</th>
+              <th class="num">Marginal reduction</th><th class="num">Marginal ROSI</th>
+              <th>Lead time</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div>
+          <h3>Not selected</h3>
+          <table id="reject-table">
+            <thead><tr><th>Action</th><th>Reason</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <h3>Budget frontier</h3>
+      <div id="frontier"></div>
+    </section>
+
+    <!-- ASK -->
+    <section class="tabpanel" id="tab-ask">
+      <div class="row">
+        <input id="question" placeholder="Which scenario drives our loss, and why?"
+               value="Which scenario is the largest and why?">
+        <button id="ask-btn">Ask</button>
+      </div>
+      <div class="row chips" id="suggestions"></div>
+      <div id="answers"></div>
+      <h3>Grounding rules in force</h3>
+      <ul id="ai-rules" class="muted"></ul>
+    </section>
+
+    <!-- DATA -->
+    <section class="tabpanel" id="tab-data">
+      <div class="row wrap">
+        <label>Dataset
+          <select id="dataset-type">
+            <option>assets</option><option>findings</option><option>controls</option>
+            <option>scenarios</option><option>actions</option>
+            <option>loss_components</option>
+          </select>
+        </label>
+        <input id="upload-file" type="file" accept=".csv,.json">
+        <label class="check"><input id="commit" type="checkbox" checked> commit</label>
+        <button id="upload-btn">Upload</button>
+      </div>
+      <p id="upload-result" class="muted"></p>
+      <div class="row wrap">
+        <button id="demo-d0">Reload synthetic D0</button>
+        <button id="demo-d30">Reload synthetic D+30</button>
+        <span class="muted">D+30 adds 5 findings, decommissions one asset and degrades
+          one control, so the change in EAL is fully explainable.</span>
+      </div>
+      <h3>Recent loads</h3>
+      <table id="dataset-table">
+        <thead><tr><th>Type</th><th>File</th><th>Status</th><th class="num">Rows</th>
+          <th class="num">OK</th><th class="num">Updated</th><th class="num">Quarantined</th>
+          <th>Loaded</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <h3>Quarantine</h3>
+      <table id="quarantine-table">
+        <thead><tr><th>Dataset</th><th class="num">Row</th><th>Reason</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <!-- REPORT -->
+    <section class="tabpanel" id="tab-report">
+      <div class="row wrap">
+        <a id="dl-md" class="button" href="/api/report/summary.md">Executive summary (.md)</a>
+        <a id="dl-csv" class="button" href="/api/report/scenarios.csv">Scenario detail (.csv)</a>
+        <a id="dl-html" class="button" href="/api/report/board.html" target="_blank">Board pack (.html)</a>
+        <span class="muted">every export repeats the synthetic-data and confidence
+          caveats</span>
+      </div>
+      <pre id="report-preview"></pre>
+    </section>
+  </div>
+</main>
+
+<div id="toast" class="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

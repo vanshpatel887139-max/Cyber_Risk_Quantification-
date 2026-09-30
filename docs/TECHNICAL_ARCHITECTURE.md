@@ -1619,23 +1619,49 @@ flowchart TD
    appearing in it is present in the context. Any unmatched figure discards the
    whole LLM answer. **[V]** `app/ai.py:185-215`
 
-**Invariant 2 — refusals are structural, not prompted.** Refusal is decided by
-keyword matching over the question text, *before* any model call, and covers
-forecast, compliance/certification, peer benchmark, and causal attribution. **[V]**
-`app/ai.py:31-38` and the pre-check at `app/ai.py:330-360`
+**Invariant 2 — refusals are decided in code, before any model call, by literal
+substring matching over the question text.** Four topic groups are defined:
+forecast, compliance/certificate, peer benchmark, and breach prediction. **[V]**
+`app/ai.py:31-38`, enforced at `app/ai.py:330-338`
 
-| Question | Response |
-|---|---|
-| "What will our EAL be next quarter?" | Refused — forecasting is out of scope |
-| "Are we ISO 27001 compliant?" | Refused — the platform holds no compliance evidence |
-| "How do we compare to industry peers?" | Refused — no benchmark dataset exists |
-| "Why did EAL rise after the firewall change?" | Refused — causal attribution is out of scope |
-| "What is our current EAL?" | Answered, grounded |
+**The refusal mechanism is weaker than it appears, and this was found by testing
+it.** It is a literal `in` check against a fixed phrase list, so it matches only
+the exact wordings someone thought of. Measured behaviour on 2026-09-30:
 
-Refusing "are we compliant" is the most important of these. The system has free-text
-framework columns on `controls` and no mapping table (section M), so any compliance
-answer would be fabricated. Refusal is the only safe response, and it is enforced
-in code so no prompt change can weaken it.
+| Question | Refused? | Note |
+|---|---|---|
+| "What will our EAL be next year?" | **Yes** | matches `next year` |
+| "predict our risk" | **Yes** | matches `predict` |
+| "Are we compliant?" | **Yes** | matches `are we compliant` |
+| "Does this pass the audit?" | **Yes** | matches `pass the audit` |
+| "Which asset will be breached?" | **Yes** | matches `which asset will be breached` |
+| "Are we ISO 27001 compliant?" | **No** | `iso 27001 compliance` needs the trailing word; `are we compliant` is broken by the intervening text |
+| "How do we compare to industry peers?" | **No** | list has `compared to industry`, not `compare to` |
+| "Why did EAL rise after the firewall change?" | **No** | **there is no attribution topic in the list at all** |
+
+Three consequences, stated plainly because an earlier draft of this document
+claimed all four were refused:
+
+1. **Causal attribution is not refused.** Nothing in the topic list covers it.
+2. **Natural phrasings of compliance and benchmark questions slip through.** The
+   guard protects the exact strings, not the intent.
+3. **A slipped-through question is not harmless when the LLM is enabled.** It
+   passes the pre-check and is sent to the model, which then has no instruction to
+   decline. The template path degrades safely — it returns the EAL summary, which
+   contains no compliance claim — but the LLM path can be walked into answering a
+   compliance or prediction question with an invented one.
+
+**Fix [P]:** replace substring matching with intent classification. Minimum
+viable: match on token sets rather than phrases, and add the missing
+attribution/root-cause topic. A short list of per-topic keywords scored by
+overlap, with a lower-case/possessive/word-boundary normaliser, closes most of the
+gap for a prototype. Correct long-term: classify the question with the same model
+that would answer it, and refuse when classification is uncertain — the safe
+default is to refuse, never to answer.
+
+Tracked as **F-25**. Refusing "are we compliant" remains the most important of
+these: the system has free-text framework columns on `controls` and no mapping
+table (section M), so any compliance answer would be fabricated.
 
 ## I.3 Grounding mechanism
 
@@ -1793,7 +1819,8 @@ appear in the Markdown brief, the HTML board slide, and the assistant context.
 3. **Confidence is about evidence, not magnitude.** A Low score means the inputs
    are weakly supported, not that the risk is small.
 4. **Model boundaries.** No forecast, no compliance opinion, no benchmark, no
-   causal attribution. Correlated-control risk is capped at 90% reduction by
+   causal attribution, and the refusal list does not actually cover the
+   attribution case (F-25). Correlated-control risk is capped at 90% reduction by
    design.
 
 `summary_markdown` additionally states the correlation adjustment explicitly as
@@ -2400,6 +2427,9 @@ number.
 | **F-22** | Exact search runs to `2^16` subsets with no time box; `max_actions` is caller-controlled | High | Open |
 | **F-23** | `loss_components_csv` and `ai_context_json` report writers are implemented but exposed by no route | Medium | Open |
 | **F-24** | `/api/docs`, `/api/openapi.json`, and `/redoc` are unauthenticated and disclose the full API surface | Low | Open |
+| **F-25** | Refusal is literal substring matching; compliance, benchmark and attribution questions slip through | **High** | Open |
+| **F-26** | CSV export has no formula-injection defence; a leading `=`/`+`/`-`/`@` is written verbatim | Medium | Open |
+| **F-27** | Failed logins are not written to the audit log, so brute-force is invisible | Medium | Open |
 
 F-1 and F-3 are the two that must be closed before any deployment beyond a single
 operator's laptop. F-1 undermines the product's core claim; F-3 is
@@ -2669,7 +2699,7 @@ Stated without hedging, because a tool that hides its limits is worse than no to
 - No forecasting, prediction, or trend analysis.
 - No compliance assessment or certification opinion.
 - No benchmarking against peers or industry.
-- No causal attribution ("why did EAL rise?" is refused).
+- No causal attribution, and **no refusal for it either** — see F-25.
 - No incident data, no near-miss data, no control-test automation.
 - No multi-tenancy, no scheduling, no live system connectors.
 - No learning from history; every coefficient is hand-chosen.
@@ -2749,6 +2779,9 @@ Full register in section N.6.
 | F-16 | No migration framework | High | 0 |
 | F-22 | Unbounded exact search | High | 0 |
 | F-23 | Loss-component and AI-context exports unreachable | Medium | 1 |
+| F-25 | Refusal bypassable by rephrasing | High | 0 |
+| F-26 | CSV formula injection on export | Medium | 1 |
+| F-27 | Failed logins not audited | Medium | 0 |
 
 ## Appendix C — Verification record
 

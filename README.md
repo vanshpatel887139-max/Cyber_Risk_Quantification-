@@ -251,6 +251,7 @@ docs/
   TECHNICAL_ARCHITECTURE.md       full design, formulas, and known limitations
   SECURITY_ACCESS_REQUIREMENTS.md  threat model, access control, and security test plan
   FRONTEND_SPECIFICATION.md        UI specification: 11 screens, components, requirements
+  AI_LLM_SPECIFICATION.md          AI layer: intents, grounding, prompts, evaluation, safeguards
   worked_example.py               regenerates every figure quoted in the design doc
 ```
 

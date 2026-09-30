@@ -135,11 +135,20 @@ user sees; capability is the server's decision.
 screen and control must also be enforced server-side; the correct posture is that the client requests
 what it may have and the server refuses what it may not.
 
-The `POST /api/ai` endpoint already returns `403` with `AI access is restricted to analysts and
-administrators` for the Executive role. That refusal is correct and the UI must render it as a calm,
-explained state rather than a generic failure.
+**Asking a question is available to all three roles.** `POST /api/ask` is gated on the `ai.ask`
+capability, and `app/config.py:58-70` grants `ai.ask` to `ROLE_ADMIN`, `ROLE_ANALYST` and
+`ROLE_EXEC` alike. Verified live: a `ciso` session receives `200` with a template answer. An earlier
+draft of this document claimed a `403` for the Executive role; that was wrong, and it is corrected
+here and in the `FR-G-10` criteria in §10.3. The grant is defensible for a board-facing tool — the
+natural-language interface exists precisely so non-technical stakeholders can query it — and the
+correct UI behaviour is therefore to show the Ask screen to everyone, while the *content* available to
+each role still comes from the same server-side assessment.
 
-Proposed MVP visibility matrix. Cells marked **[P]** are proposed behaviour.
+The only AI-related refusal the server actually performs today is the **scope** refusal in
+`app/ai.py:368` — out-of-scope questions are answered from the deterministic template with
+`refused: true`, not a `403`. §8.7 covers that path.
+
+Visibility matrix. Cells marked **[P]** are proposed behaviour; the Ask row is the server's actual grant (`ai.ask` for all three roles), not a UI decision.
 
 | Screen / action | Executive | Analyst | Admin |
 |---|---|---|---|
@@ -147,7 +156,7 @@ Proposed MVP visibility matrix. Cells marked **[P]** are proposed behaviour.
 | Risk Explorer | View | Edit | Edit |
 | What-if Simulator | No | Yes | Yes |
 | Investment Optimizer | View | Yes | Yes |
-| Ask | No **[P]** | Yes | Yes |
+| Ask | **Yes** | Yes | Yes |
 | Compliance Mapping | View | Yes | Yes |
 | Reports & Export | Board summary only **[P]** | All four | All four |
 | Data upload | No | No | Yes |
@@ -1440,7 +1449,7 @@ Given/When/Then form so that **every Must in §10.1 and §10.2 is testable**, as
 |---|---|---|---|
 | `FR-G-05` | An abbreviated figure such as `₹1.11 Cr` | the user hovers, focuses, or exports | the exact `₹1,10,62,271` is available in all three |
 | `FR-G-07` | A user with role `ciso` | they request `/api/optimise` | the server returns `403` regardless of whether the control was hidden |
-| `FR-G-10` | `/api/ask` returns `403` for `ciso` | the Ask screen renders | the message names the required role; no stack trace or raw error body |
+| `FR-G-10` | An out-of-scope question returns `refused: true` from `/api/ask` | the Ask screen renders | the refusal text names what the platform does and does not hold; no stack trace or raw error body |
 | `FR-G-11` | Any data region | its request is pending, empty, failed, or stale | the matching state from §16 renders in that region |
 
 **S1 Login**
@@ -1909,7 +1918,7 @@ One line per screen. This is the section to read before a demo or a code review.
 | S4 | **Risk Explorer** | Trace the number to its cause | Analyst | Scenario, `breakdown`, `control_detail`, `confidence_reasons` | Partial | Remove the dead `threat_actor` column; add filters and drill-down breadcrumb (`FR-S4-03`, `FR-S4-04`) |
 | S5 | **What-if Simulator** | Change an assumption, keep the baseline | Analyst | `p0` override, full assessment | Partial | **Stop destroying the baseline; remove `window.prompt`** (`FR-S5-01`, `FR-S5-02`) |
 | S6 | **Investment Optimizer** | Best plan for a budget, and why | Analyst | `plan`, `rejected`, `frontier` | Partial | Draw the real curve; move frontier ROSI server-side; design the empty state (`FR-S6-04`, `FR-S6-07`) |
-| S7 | **Ask** | Grounded natural-language answers | Analyst | Answer, grounding, guarantees | Implemented, with a caveat | **Remove the two suggested chips the backend cannot refuse** (`FR-S7-02`) |
+| S7 | **Ask** | Grounded natural-language answers | All three | Answer, grounding, guarantees | Implemented, with a caveat | **Remove the two suggested chips the backend cannot refuse** (`FR-S7-02`) |
 | S8 | **Compliance Mapping** | Controls and their use, without claiming certification | Analyst | `controls`, `ce_source` | Not implemented | Build the list; **never a coverage % or a verdict** (`FR-S8-01`, `FR-S8-02`) |
 | S9 | **Reports & Export** | Shareable artefact with disclaimers intact | All | Report contents, headers | Partial | Add redaction, per-format contents, LLM-disabled explanation (`FR-S9-04`, `FR-S9-06`) |
 | S10 | **Assumptions & Settings** | Make every constant inspectable | Admin | Multipliers, `rho_used`, currency | Not implemented | Show all four multipliers with their source; confirm before apply (`FR-S10-01`, `FR-S10-02`) |
